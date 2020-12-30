@@ -264,8 +264,7 @@ class Launcher(object):
             output_artifacts=cached_outputs)
         logging.info('An cached execusion %d is used.', execution.id)
         return _PrepareExecutionResult(
-            execution_info=data_types.ExecutionInfo(
-                execution_id=execution.id),
+            execution_info=data_types.ExecutionInfo(execution_id=execution.id),
             execution_metadata=execution,
             contexts=contexts,
             is_execution_needed=False)
@@ -414,9 +413,8 @@ class Launcher(object):
       logging.info('Execution %d succeeded.', execution_info.execution_id)
       self._clean_up_stateful_execution_info(execution_info)
       logging.info('Publishing output artifacts %s for exeuction %s',
-                   execution_info.output_dict,
-                   execution_info.execution_id)
-      self._publish_successful_execution(execution_info.execution_id,
-                                         contexts, execution_info.output_dict,
+                   execution_info.output_dict, execution_info.execution_id)
+      self._publish_successful_execution(execution_info.execution_id, contexts,
+                                         execution_info.output_dict,
                                          executor_output)
     return prepare_execution_result.execution_metadata
