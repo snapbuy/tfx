@@ -18,7 +18,6 @@ import os
 from typing import Any, Dict, List, Optional
 
 from absl import logging
-
 from tfx.components.example_gen import driver
 from tfx.components.example_gen import utils
 from tfx.dsl.io import fileio
