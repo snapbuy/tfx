@@ -55,9 +55,9 @@ def make_pipeline_sdk_required_install_packages():
       'absl-py>=0.9,<0.11',
       'ml-metadata' + select_constraint(
           # LINT.IfChange
-          default='>=0.27,<0.28',
+          default='>=0.26,<0.27',
           # LINT.ThenChange(tfx/workspace.bzl)
-          nightly='>=0.28.0.dev',
+          nightly='>=0.27.0.dev',
           git_master='@git+https://github.com/google/ml-metadata@master'),
       'protobuf>=3.12.2,<4',
       'six>=1.10,<2',
@@ -83,9 +83,6 @@ def make_required_install_packages():
       # dependency expecatation with TensorFlow is sorted out.
       'keras-tuner>=1,<1.0.2',
       'kubernetes>=10.0.1,<12',
-      # TODO(b/179195488): remove numpy dependency after 1.20 migration.
-      # This dependency was added only to limit numpy 1.20 installation.
-      'numpy>=1.16,<1.20',
       'pyarrow>=1,<3',
       'pyyaml>=3.12,<6',
       'tensorflow>=1.15.2,!=2.0.*,!=2.1.*,!=2.2.*,!=2.3.*,<3',
@@ -93,23 +90,23 @@ def make_required_install_packages():
       # TODO(b/159488890): remove user module-only dependency.
       'tensorflow-cloud>=0.1,<0.2',
       'tensorflow-data-validation' + select_constraint(
-          default='>=0.27,<0.28',
-          nightly='>=0.28.0.dev',
+          default='>=0.26,<0.27',
+          nightly='>=0.27.0.dev',
           git_master='@git+https://github.com/tensorflow/data-validation@master'
       ),
       'tensorflow-model-analysis' + select_constraint(
-          default='>=0.27,<0.28',
-          nightly='>=0.28.0.dev',
+          default='>=0.26,<0.27',
+          nightly='>=0.27.0.dev',
           git_master='@git+https://github.com/tensorflow/model-analysis@master'
       ),
       'tensorflow-serving-api>=1.15,!=2.0.*,!=2.1.*,!=2.2.*,!=2.3.*,<3',
       'tensorflow-transform' + select_constraint(
-          default='>=0.27,<0.28',
-          nightly='>=0.28.0.dev',
+          default='>=0.26,<0.27',
+          nightly='>=0.27.0.dev',
           git_master='@git+https://github.com/tensorflow/transform@master'),
       'tfx-bsl' + select_constraint(
-          default='>=0.27,<0.28',
-          nightly='>=0.28.0.dev',
+          default='>=0.26.1,<0.27',
+          nightly='>=0.27.0.dev',
           git_master='@git+https://github.com/tensorflow/tfx-bsl@master'),
   ]
 
@@ -128,7 +125,7 @@ def make_extra_packages_test():
       # apache-airflow 1.0.14 or later.(github.com/apache/airflow/issues/11965).
       'cattrs==1.0.0',
       'kfp>=1.1.0,<2',
-      'kfp-pipeline-spec>=0.1.5,<0.2',
+      'kfp-pipeline-spec>=0.1.3,<0.2',
       'pytest>=5,<6',
       # TODO(b/175740170): Delete pinned werkzeug version after using the new
       # pip resolver.
@@ -139,7 +136,7 @@ def make_extra_packages_test():
 def make_extra_packages_docker_image():
   # Packages needed for tfx docker image.
   return [
-      'kfp-pipeline-spec>=0.1.5,<0.2',
+      'kfp-pipeline-spec>=0.1.3,<0.2',
       'mmh>=2.2,<3',
       'python-snappy>=0.5,<0.6',
   ]

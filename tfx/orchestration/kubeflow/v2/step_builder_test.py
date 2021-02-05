@@ -17,8 +17,6 @@ from typing import Sequence
 
 import tensorflow as tf
 from tfx import components
-from tfx.dsl.components.common import importer
-from tfx.dsl.components.common import resolver
 from tfx.dsl.experimental import latest_artifacts_resolver
 from tfx.dsl.experimental import latest_blessed_model_resolver
 from tfx.extensions.google_cloud_big_query.example_gen import component as big_query_example_gen_component
@@ -37,7 +35,7 @@ _TEST_CMDS = ('python', '-m', 'my_entrypoint.app_module')
 
 _EXPECTED_LATEST_BLESSED_MODEL_RESOLVER_1 = r"""
 task_info {
-  name: "Resolver.my_resolver2-model-blessing-resolver"
+  name: "ResolverNode.my_resolver2-model-blessing-resolver"
 }
 outputs {
   artifacts {
@@ -49,18 +47,18 @@ outputs {
     }
   }
 }
-executor_label: "Resolver.my_resolver2-model-blessing-resolver_executor"
+executor_label: "ResolverNode.my_resolver2-model-blessing-resolver_executor"
 """
 
 _EXPECTED_LATEST_BLESSED_MODEL_RESOLVER_2 = r"""
 task_info {
-  name: "Resolver.my_resolver2-model-resolver"
+  name: "ResolverNode.my_resolver2-model-resolver"
 }
 inputs {
   artifacts {
     key: "input"
     value {
-      producer_task: "Resolver.my_resolver2-model-blessing-resolver"
+      producer_task: "ResolverNode.my_resolver2-model-blessing-resolver"
       output_artifact_key: "model_blessing"
     }
   }
@@ -75,12 +73,12 @@ outputs {
     }
   }
 }
-executor_label: "Resolver.my_resolver2-model-resolver_executor"
+executor_label: "ResolverNode.my_resolver2-model-resolver_executor"
 """
 
 _EXPECTED_LATEST_BLESSED_MODEL_EXECUTOR = r"""
 executors {
-  key: "Resolver.my_resolver2-model-blessing-resolver_executor"
+  key: "ResolverNode.my_resolver2-model-blessing-resolver_executor"
   value {
     resolver {
       output_artifact_queries {
@@ -93,7 +91,7 @@ executors {
   }
 }
 executors {
-  key: "Resolver.my_resolver2-model-resolver_executor"
+  key: "ResolverNode.my_resolver2-model-resolver_executor"
   value {
     resolver {
       output_artifact_queries {
@@ -225,7 +223,7 @@ class StepBuilderTest(tf.test.TestCase):
             pipeline_pb2.PipelineDeploymentConfig()), deployment_config)
 
   def testBuildImporter(self):
-    impt = importer.Importer(
+    impt = components.ImporterNode(
         instance_name='my_importer',
         source_uri='m/y/u/r/i',
         properties={
@@ -251,9 +249,9 @@ class StepBuilderTest(tf.test.TestCase):
 
   def testBuildLatestBlessedModelResolverSucceed(self):
 
-    latest_blessed_resolver = resolver.Resolver(
+    latest_blessed_resolver = components.ResolverNode(
         instance_name='my_resolver2',
-        strategy_class=latest_blessed_model_resolver.LatestBlessedModelResolver,
+        resolver_class=latest_blessed_model_resolver.LatestBlessedModelResolver,
         model=channel.Channel(type=standard_artifacts.Model),
         model_blessing=channel.Channel(type=standard_artifacts.ModelBlessing))
     test_pipeline_info = data_types.PipelineInfo(
@@ -282,9 +280,9 @@ class StepBuilderTest(tf.test.TestCase):
         deployment_config)
 
   def testBuildLatestArtifactResolverSucceed(self):
-    latest_model_resolver = resolver.Resolver(
+    latest_model_resolver = components.ResolverNode(
         instance_name='my_resolver',
-        strategy_class=latest_artifacts_resolver.LatestArtifactsResolver,
+        resolver_class=latest_artifacts_resolver.LatestArtifactsResolver,
         model=channel.Channel(type=standard_artifacts.Model),
         examples=channel.Channel(type=standard_artifacts.Examples))
     deployment_config = pipeline_pb2.PipelineDeploymentConfig()

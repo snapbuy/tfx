@@ -14,7 +14,6 @@
 """Tests for bulk_inferrer."""
 
 import os
-import unittest
 
 import tensorflow as tf
 from tfx.components.bulk_inferrer import executor
@@ -22,7 +21,6 @@ from tfx.dsl.io import fileio
 from tfx.proto import bulk_inferrer_pb2
 from tfx.types import artifact_utils
 from tfx.types import standard_artifacts
-from tfx.types import standard_component_specs
 from tfx.utils import io_utils
 from tfx.utils import proto_utils
 
@@ -30,8 +28,6 @@ from google.protobuf import text_format
 from tensorflow_serving.apis import prediction_log_pb2
 
 
-@unittest.skipIf(tf.__version__ < '2',
-                 'This test uses testdata only compatible with TF 2.x')
 class ExecutorTest(tf.test.TestCase):
 
   def setUp(self):
@@ -63,9 +59,9 @@ class ExecutorTest(tf.test.TestCase):
     self._model_blessing.set_int_custom_property('blessed', 1)
 
     self._input_dict = {
-        standard_component_specs.EXAMPLES_KEY: [self._examples],
-        standard_component_specs.MODEL_KEY: [self._model],
-        standard_component_specs.MODEL_BLESSING_KEY: [self._model_blessing],
+        'examples': [self._examples],
+        'model': [self._model],
+        'model_blessing': [self._model_blessing],
     }
 
     # Create output dict.
@@ -80,22 +76,17 @@ class ExecutorTest(tf.test.TestCase):
     self._output_examples.uri = self._output_examples_dir
 
     self._output_dict_ir = {
-        standard_component_specs.INFERENCE_RESULT_KEY: [self._inference_result],
+        'inference_result': [self._inference_result],
     }
     self._output_dict_oe = {
-        standard_component_specs.OUTPUT_EXAMPLES_KEY: [
-            self._output_examples
-        ],
+        'output_examples': [self._output_examples],
     }
 
     # Create exe properties.
     self._exec_properties = {
-        standard_component_specs.DATA_SPEC_KEY:
-            proto_utils.proto_to_json(bulk_inferrer_pb2.DataSpec()),
-        standard_component_specs.MODEL_SPEC_KEY:
-            proto_utils.proto_to_json(bulk_inferrer_pb2.ModelSpec()),
-        'component_id':
-            self.component_id,
+        'data_spec': proto_utils.proto_to_json(bulk_inferrer_pb2.DataSpec()),
+        'model_spec': proto_utils.proto_to_json(bulk_inferrer_pb2.ModelSpec()),
+        'component_id': self.component_id,
     }
 
     # Create context
@@ -146,10 +137,9 @@ class ExecutorTest(tf.test.TestCase):
         2)
 
   def testDoWithOutputExamplesAllSplits(self):
-    self._exec_properties[standard_component_specs
-                          .OUTPUT_EXAMPLE_SPEC_KEY] = proto_utils.proto_to_json(
-                              text_format.Parse(
-                                  """
+    self._exec_properties['output_example_spec'] = proto_utils.proto_to_json(
+        text_format.Parse(
+            """
                 output_columns_spec {
                   classify_output {
                     label_column: 'classify_label'
@@ -169,16 +159,14 @@ class ExecutorTest(tf.test.TestCase):
     self._verify_example_split('unlabelled2')
 
   def testDoWithOutputExamplesSpecifiedSplits(self):
-    self._exec_properties[
-        standard_component_specs.DATA_SPEC_KEY] = proto_utils.proto_to_json(
-            text_format.Parse(
-                """
+    self._exec_properties['data_spec'] = proto_utils.proto_to_json(
+        text_format.Parse(
+            """
                 example_splits: 'unlabelled'
             """, bulk_inferrer_pb2.DataSpec()))
-    self._exec_properties[standard_component_specs
-                          .OUTPUT_EXAMPLE_SPEC_KEY] = proto_utils.proto_to_json(
-                              text_format.Parse(
-                                  """
+    self._exec_properties['output_example_spec'] = proto_utils.proto_to_json(
+        text_format.Parse(
+            """
                 output_columns_spec {
                   classify_output {
                     label_column: 'classify_label'

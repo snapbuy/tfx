@@ -1,4 +1,4 @@
-# Copyright 2021 Google LLC. All Rights Reserved.
+# Copyright 2020 Google LLC. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
 
 import os
 from typing import Text
-import unittest
 
 import tensorflow as tf
 
@@ -25,8 +24,6 @@ from tfx.orchestration import metadata
 from tfx.orchestration.local.local_dag_runner import LocalDagRunner
 
 
-@unittest.skipIf(tf.__version__ < '2',
-                 'Uses keras Model only compatible with TF 2.x')
 class PenguinPipelineSklearnLocalEndToEndTest(tf.test.TestCase):
 
   def setUp(self):
@@ -39,10 +36,8 @@ class PenguinPipelineSklearnLocalEndToEndTest(tf.test.TestCase):
 
     self._pipeline_name = 'sklearn_test'
     self._data_root = os.path.join(self._penguin_root, 'data')
-    self._trainer_module_file = os.path.join(
-        self._experimental_root, 'penguin_utils_sklearn.py')
-    self._evaluator_module_file = os.path.join(
-        self._experimental_root, 'sklearn_predict_extractor.py')
+    self._module_file = os.path.join(self._experimental_root,
+                                     'penguin_utils_sklearn.py')
     self._serving_model_dir = os.path.join(self._test_dir, 'serving_model')
     self._pipeline_root = os.path.join(self._test_dir, 'tfx', 'pipelines',
                                        self._pipeline_name)
@@ -60,8 +55,6 @@ class PenguinPipelineSklearnLocalEndToEndTest(tf.test.TestCase):
 
   def assertPipelineExecution(self) -> None:
     self.assertExecutedOnce('CsvExampleGen')
-    self.assertExecutedOnce('Evaluator')
-    self.assertExecutedOnce('ExampleValidator')
     self.assertExecutedOnce('Pusher')
     self.assertExecutedOnce('SchemaGen')
     self.assertExecutedOnce('StatisticsGen')
@@ -71,17 +64,16 @@ class PenguinPipelineSklearnLocalEndToEndTest(tf.test.TestCase):
     LocalDagRunner().run(
         penguin_pipeline_sklearn_local._create_pipeline(
             pipeline_name=self._pipeline_name,
-            pipeline_root=self._pipeline_root,
             data_root=self._data_root,
-            trainer_module_file=self._trainer_module_file,
-            evaluator_module_file=self._evaluator_module_file,
+            module_file=self._module_file,
             serving_model_dir=self._serving_model_dir,
+            pipeline_root=self._pipeline_root,
             metadata_path=self._metadata_path,
             beam_pipeline_args=[]))
 
     self.assertTrue(fileio.exists(self._serving_model_dir))
     self.assertTrue(fileio.exists(self._metadata_path))
-    expected_execution_count = 8  # 7 components + 1 resolver
+    expected_execution_count = 6  # 6 components
     metadata_config = metadata.sqlite_metadata_connection_config(
         self._metadata_path)
     with metadata.Metadata(metadata_config) as m:
@@ -96,17 +88,16 @@ class PenguinPipelineSklearnLocalEndToEndTest(tf.test.TestCase):
     LocalDagRunner().run(
         penguin_pipeline_sklearn_local._create_pipeline(
             pipeline_name=self._pipeline_name,
-            pipeline_root=self._pipeline_root,
             data_root=self._data_root,
-            trainer_module_file=self._trainer_module_file,
-            evaluator_module_file=self._evaluator_module_file,
+            module_file=self._module_file,
             serving_model_dir=self._serving_model_dir,
+            pipeline_root=self._pipeline_root,
             metadata_path=self._metadata_path,
             beam_pipeline_args=[]))
 
+    # All executions but Evaluator and Pusher are cached.
     with metadata.Metadata(metadata_config) as m:
-      # Artifact count is increased by 3 caused by Evaluator and Pusher.
-      self.assertEqual(artifact_count + 3, len(m.store.get_artifacts()))
+      self.assertEqual(artifact_count, len(m.store.get_artifacts()))
       artifact_count = len(m.store.get_artifacts())
       self.assertEqual(expected_execution_count * 2,
                        len(m.store.get_executions()))
@@ -115,11 +106,10 @@ class PenguinPipelineSklearnLocalEndToEndTest(tf.test.TestCase):
     LocalDagRunner().run(
         penguin_pipeline_sklearn_local._create_pipeline(
             pipeline_name=self._pipeline_name,
-            pipeline_root=self._pipeline_root,
             data_root=self._data_root,
-            trainer_module_file=self._trainer_module_file,
-            evaluator_module_file=self._evaluator_module_file,
+            module_file=self._module_file,
             serving_model_dir=self._serving_model_dir,
+            pipeline_root=self._pipeline_root,
             metadata_path=self._metadata_path,
             beam_pipeline_args=[]))
 

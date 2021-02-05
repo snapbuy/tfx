@@ -18,6 +18,7 @@ This module file will be used in the Transform, Tuner and generic Trainer
 components.
 """
 
+import os
 from typing import List, Text
 import absl
 import kerastuner
@@ -26,17 +27,25 @@ from tensorflow import keras
 from tensorflow_cloud import CloudTuner
 import tensorflow_transform as tft
 
-from tfx.components.trainer.fn_args_utils import DataAccessor
 from tfx.components.trainer.fn_args_utils import FnArgs
 from tfx.components.tuner.component import TunerFnResult
-from tfx_bsl.tfxio import dataset_options
 
+
+# The project/region configuations for Cloud Vizier service (and Trial execution
+# thereof), not the AIP Training service for distributed tuning flock
+# management.
+_PROJECT_ID = 'my-gcp-project'
+_REGION = 'us-central1'
 
 _FEATURE_KEYS = [
     'culmen_length_mm', 'culmen_depth_mm', 'flipper_length_mm', 'body_mass_g'
 ]
 _LABEL_KEY = 'species'
 
+# The Penguin dataset has 342 records, and is divided into train and eval
+# splits in a 2:1 ratio.
+_TRAIN_DATA_SIZE = 228
+_EVAL_DATA_SIZE = 114
 _TRAIN_BATCH_SIZE = 20
 _EVAL_BATCH_SIZE = 10
 
@@ -70,16 +79,13 @@ def _get_serve_tf_examples_fn(model, tf_transform_output):
 
 
 def _input_fn(file_pattern: List[Text],
-              data_accessor: DataAccessor,
               tf_transform_output: tft.TFTransformOutput,
               batch_size: int = 200) -> tf.data.Dataset:
   """Generates features and label for tuning/training.
 
   Args:
     file_pattern: List of paths or patterns of input tfrecord files.
-    data_accessor: DataAccessor for converting input to RecordBatch.
-    tf_transform_output: A `TFTransformOutput` object, containing statistics
-      and metadata from TFTransform component.
+    tf_transform_output: A TFTransformOutput.
     batch_size: representing the number of consecutive elements of returned
       dataset to combine in a single batch
 
@@ -87,35 +93,17 @@ def _input_fn(file_pattern: List[Text],
     A dataset that contains (features, indices) tuple where features is a
       dictionary of Tensors, and indices is a single Tensor of label indices.
   """
-  return data_accessor.tf_dataset_factory(
-      file_pattern,
-      dataset_options.TensorFlowDatasetOptions(
-          batch_size=batch_size, label_key=_transformed_name(_LABEL_KEY)),
-      tf_transform_output.transformed_metadata.schema).repeat()
+  transformed_feature_spec = (
+      tf_transform_output.transformed_feature_spec().copy())
 
+  dataset = tf.data.experimental.make_batched_features_dataset(
+      file_pattern=file_pattern,
+      batch_size=batch_size,
+      features=transformed_feature_spec,
+      reader=_gzip_reader_fn,
+      label_key=_transformed_name(_LABEL_KEY))
 
-# TFX Transform will call this function.
-def preprocessing_fn(inputs):
-  """tf.transform's callback function for preprocessing inputs.
-
-  Args:
-    inputs: map from feature keys to raw not-yet-transformed features.
-
-  Returns:
-    Map from string feature key to transformed feature operations.
-  """
-  outputs = {}
-
-  for key in _FEATURE_KEYS:
-    # Nothing to transform for the penguin dataset. This code is just to
-    # show how the preprocessing function for Transform should be defined.
-    # We just assign original values to the transformed feature.
-    outputs[_transformed_name(key)] = inputs[key]
-  # TODO(b/157064428): Support label transformation for Keras.
-  # Do not apply label transformation as it will result in wrong evaluation.
-  outputs[_transformed_name(_LABEL_KEY)] = inputs[_LABEL_KEY]
-
-  return outputs
+  return dataset
 
 
 def _get_hyperparameters() -> kerastuner.HyperParameters:
@@ -157,21 +145,43 @@ def _build_keras_model(hparams: kerastuner.HyperParameters) -> tf.keras.Model:
   return model
 
 
+# TFX Transform will call this function.
+def preprocessing_fn(inputs):
+  """tf.transform's callback function for preprocessing inputs.
+
+  Args:
+    inputs: map from feature keys to raw not-yet-transformed features.
+
+  Returns:
+    Map from string feature key to transformed feature operations.
+  """
+  outputs = {}
+
+  for key in _FEATURE_KEYS:
+    # Nothing to transform for the penguin dataset. This code is just to
+    # show how the preprocessing function for Transform should be defined.
+    # We just assign original values to the transformed feature.
+    outputs[_transformed_name(key)] = inputs[key]
+  # TODO(b/157064428): Support label transformation for Keras.
+  # Do not apply label transformation as it will result in wrong evaluation.
+  outputs[_transformed_name(_LABEL_KEY)] = inputs[_LABEL_KEY]
+
+  return outputs
+
+
 # TFX Tuner will call this function.
 def tuner_fn(fn_args: FnArgs) -> TunerFnResult:
   """Build the tuner using the CloudTuner API.
 
   Args:
-    fn_args: Holds args as name/value pairs. See
-      https://www.tensorflow.org/tfx/api_docs/python/tfx/components/trainer/fn_args_utils/FnArgs.
-      - transform_graph_path: optional transform graph produced by TFT.
-      - custom_config: An optional dictionary passed to the component. In this
-        example, it contains the dict ai_platform_training_args.
+    fn_args: Holds args as name/value pairs.
       - working_dir: working dir for tuning.
       - train_files: List of file paths containing training tf.Example data.
       - eval_files: List of file paths containing eval tf.Example data.
       - train_steps: number of train steps.
       - eval_steps: number of eval steps.
+      - schema_path: optional schema of the input data.
+      - transform_graph_path: optional transform graph produced by TFT.
 
   Returns:
     A namedtuple contains the following:
@@ -180,36 +190,22 @@ def tuner_fn(fn_args: FnArgs) -> TunerFnResult:
                     model , e.g., the training and validation dataset. Required
                     args depend on the above tuner's implementation.
   """
-  transform_graph = tft.TFTransformOutput(fn_args.transform_graph_path)
-
   # CloudTuner is a subclass of kerastuner.Tuner which inherits from
   # BaseTuner.
   tuner = CloudTuner(
       _build_keras_model,
-      # The project/region configuations for Cloud Vizier service and its trial
-      # executions. Note: this example uses the same configuration as the
-      # CAIP Training service for distributed tuning flock management to view
-      # all of the pipeline's jobs and resources in the same project. It can
-      # also be configured separately.
-      project_id=fn_args.custom_config['ai_platform_training_args']['project'],
-      region=fn_args.custom_config['ai_platform_training_args']['region'],
+      project_id=_PROJECT_ID,
+      region=_REGION,
       objective=kerastuner.Objective('val_sparse_categorical_accuracy', 'max'),
       hyperparameters=_get_hyperparameters(),
       max_trials=8,  # Optional.
       directory=fn_args.working_dir)
 
+  transform_graph = tft.TFTransformOutput(fn_args.transform_graph_path)
   train_dataset = _input_fn(
-      fn_args.train_files,
-      fn_args.data_accessor,
-      transform_graph,
-      batch_size=_TRAIN_BATCH_SIZE)
-
+      fn_args.train_files, transform_graph, batch_size=_TRAIN_BATCH_SIZE)
   eval_dataset = _input_fn(
-      fn_args.eval_files,
-      fn_args.data_accessor,
-      transform_graph,
-      batch_size=_EVAL_BATCH_SIZE)
-
+      fn_args.eval_files, transform_graph, batch_size=_EVAL_BATCH_SIZE)
   return TunerFnResult(
       tuner=tuner,
       fit_kwargs={
@@ -225,35 +221,14 @@ def run_fn(fn_args: FnArgs):
   """Train the model based on given args.
 
   Args:
-    fn_args: Holds args as name/value pairs. See
-      https://www.tensorflow.org/tfx/api_docs/python/tfx/components/trainer/fn_args_utils/FnArgs.
-      - train_files: List of file paths containing training tf.Example data.
-      - eval_files: List of file paths containing eval tf.Example data.
-      - data_accessor: Contains factories that can create tf.data.Datasets or
-        other means to access the train/eval data. They provide a uniform way
-        of accessing data, regardless of how the data is stored on disk.
-      - train_steps: number of train steps.
-      - eval_steps: number of eval steps.
-      - transform_output: A uri to a path containing statistics and metadata
-        from TFTransform component.
-        produced by TFT. Will be None if not specified.
-      - model_run_dir: A single uri for the output directory of model training
-        related files.
-      - hyperparameters: An optional kerastuner.HyperParameters config.
+    fn_args: Holds args used to train the model as name/value pairs.
   """
   tf_transform_output = tft.TFTransformOutput(fn_args.transform_output)
 
   train_dataset = _input_fn(
-      fn_args.train_files,
-      fn_args.data_accessor,
-      tf_transform_output,
-      batch_size=_TRAIN_BATCH_SIZE)
-
+      fn_args.train_files, tf_transform_output, batch_size=_TRAIN_BATCH_SIZE)
   eval_dataset = _input_fn(
-      fn_args.eval_files,
-      fn_args.data_accessor,
-      tf_transform_output,
-      batch_size=_EVAL_BATCH_SIZE)
+      fn_args.eval_files, tf_transform_output, batch_size=_EVAL_BATCH_SIZE)
 
   if fn_args.hyperparameters:
     hparams = kerastuner.HyperParameters.from_config(fn_args.hyperparameters)
@@ -268,13 +243,22 @@ def run_fn(fn_args: FnArgs):
   with mirrored_strategy.scope():
     model = _build_keras_model(hparams)
 
+  steps_per_epoch = _TRAIN_DATA_SIZE // _TRAIN_BATCH_SIZE
+
+  try:
+    log_dir = fn_args.model_run_dir
+  except KeyError:
+    # TODO(b/158106209): use ModelRun instead of Model artifact for logging.
+    log_dir = os.path.join(os.path.dirname(fn_args.serving_model_dir), 'logs')
+
   # Write logs to path
   tensorboard_callback = tf.keras.callbacks.TensorBoard(
-      log_dir=fn_args.model_run_dir, update_freq='batch')
+      log_dir=log_dir, update_freq='batch')
 
   model.fit(
       train_dataset,
-      steps_per_epoch=fn_args.train_steps,
+      epochs=fn_args.train_steps // steps_per_epoch,
+      steps_per_epoch=steps_per_epoch,
       validation_data=eval_dataset,
       validation_steps=fn_args.eval_steps,
       callbacks=[tensorboard_callback])

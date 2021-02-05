@@ -19,6 +19,7 @@ from __future__ import print_function
 
 from typing import Any, Dict, Optional, Text, Union
 
+import absl
 from tfx import types
 from tfx.components.trainer import executor
 from tfx.dsl.components.base import base_component
@@ -119,8 +120,9 @@ class Trainer(base_component.BaseComponent):
       eval_args: Union[trainer_pb2.EvalArgs, Dict[Text, Any]] = None,
       custom_config: Optional[Dict[Text, Any]] = None,
       custom_executor_spec: Optional[executor_spec.ExecutorSpec] = None,
-      model: Optional[types.Channel] = None,
+      output: Optional[types.Channel] = None,
       model_run: Optional[types.Channel] = None,
+      transform_output: Optional[types.Channel] = None,
       instance_name: Optional[Text] = None):
     """Construct a Trainer component.
 
@@ -183,9 +185,11 @@ class Trainer(base_component.BaseComponent):
       custom_config: A dict which contains addtional training job parameters
         that will be passed into user module.
       custom_executor_spec: Optional custom executor spec.
-      model: Optional `Model` channel for result of exported models.
+      output: Optional `Model` channel for result of exported models.
       model_run: Optional `ModelRun` channel, as the working dir of models,
         can be used to output non-model related output (e.g., TensorBoard logs).
+      transform_output: Backwards compatibility alias for the 'transform_graph'
+        argument.
       instance_name: Optional unique instance name. Necessary iff multiple
         Trainer components are declared in the same pipeline.
 
@@ -207,11 +211,17 @@ class Trainer(base_component.BaseComponent):
       raise ValueError(
           "Exactly one of 'example' or 'transformed_example' must be supplied.")
 
+    if transform_output:
+      absl.logging.warning(
+          'The "transform_output" argument to the Trainer component has '
+          'been renamed to "transform_graph" and is deprecated. Please update '
+          "your usage as support for this argument will be removed soon.")
+      transform_graph = transform_output
     if transformed_examples and not transform_graph:
       raise ValueError("If 'transformed_examples' is supplied, "
                        "'transform_graph' must be supplied too.")
     examples = examples or transformed_examples
-    model = model or types.Channel(type=standard_artifacts.Model)
+    output = output or types.Channel(type=standard_artifacts.Model)
     model_run = model_run or types.Channel(type=standard_artifacts.ModelRun)
     spec = TrainerSpec(
         examples=examples,
@@ -225,7 +235,7 @@ class Trainer(base_component.BaseComponent):
         run_fn=run_fn,
         trainer_fn=trainer_fn,
         custom_config=json_utils.dumps(custom_config),
-        model=model,
+        model=output,
         model_run=model_run)
     super(Trainer, self).__init__(
         spec=spec,
