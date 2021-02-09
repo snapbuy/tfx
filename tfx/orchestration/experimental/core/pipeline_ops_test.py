@@ -233,8 +233,8 @@ class PipelineOpsTest(tu.TfxTest):
 
   @mock.patch.object(sync_pipeline_task_gen, 'SyncPipelineTaskGenerator')
   @mock.patch.object(async_pipeline_task_gen, 'AsyncPipelineTaskGenerator')
-  def test_orchestrate_async_active_pipelines(self, mock_async_task_gen,
-                                              mock_sync_task_gen):
+  def test_generate_tasks_async_active_pipelines(self, mock_async_task_gen,
+                                                 mock_sync_task_gen):
     with self._mlmd_connection as m:
       # One active pipeline.
       pipeline1 = _test_pipeline('pipeline1')
@@ -273,7 +273,7 @@ class PipelineOpsTest(tu.TfxTest):
       mock_async_task_gen.return_value.generate.side_effect = _exec_node_tasks()
 
       task_queue = tq.TaskQueue()
-      pipeline_ops.orchestrate(m, task_queue)
+      pipeline_ops.generate_tasks(m, task_queue)
 
       self.assertEqual(2, mock_async_task_gen.return_value.generate.call_count)
       mock_sync_task_gen.assert_not_called()
@@ -331,7 +331,7 @@ class PipelineOpsTest(tu.TfxTest):
               is_cancelled=True), None, None, None, None
       ]
 
-      pipeline_ops.orchestrate(m, task_queue)
+      pipeline_ops.generate_tasks(m, task_queue)
 
       # There are no active pipelines so these shouldn't be called.
       mock_async_task_gen.assert_not_called()
@@ -371,13 +371,13 @@ class PipelineOpsTest(tu.TfxTest):
       self.assertEqual(2, mock_gen_task_from_active.call_count)
 
       # Pipeline execution should continue to be active since active node
-      # executions were found in the last call to `orchestrate`.
+      # executions were found in the last call to `generate_tasks`.
       [execution] = m.store.get_executions_by_id([pipeline1_execution.id])
       self.assertTrue(execution_lib.is_execution_active(execution))
 
-      # Call `orchestrate` again; this time there are no more active node
+      # Call `generate_tasks` again; this time there are no more active node
       # executions so the pipeline should be marked as cancelled.
-      pipeline_ops.orchestrate(m, task_queue)
+      pipeline_ops.generate_tasks(m, task_queue)
       self.assertTrue(task_queue.is_empty())
       [execution] = m.store.get_executions_by_id([pipeline1_execution.id])
       self.assertEqual(metadata_store_pb2.Execution.CANCELED,
@@ -426,7 +426,7 @@ class PipelineOpsTest(tu.TfxTest):
       # Simulate Evaluator having an active execution in MLMD.
       mock_gen_task_from_active.side_effect = [evaluator_task]
 
-      pipeline_ops.orchestrate(m, task_queue)
+      pipeline_ops.generate_tasks(m, task_queue)
       self.assertEqual(1, mock_async_task_gen.return_value.generate.call_count)
 
       # Verify that tasks are enqueued in the expected order:
@@ -454,34 +454,6 @@ class PipelineOpsTest(tu.TfxTest):
 
       # No more tasks.
       self.assertTrue(task_queue.is_empty())
-
-  def test_save_and_remove_pipeline_property(self):
-    with self._mlmd_connection as m:
-      pipeline1 = _test_pipeline('pipeline1')
-      pipeline_state1 = pipeline_ops.initiate_pipeline_start(m, pipeline1)
-      property_key = 'test_key'
-      property_value = 'bala'
-      self.assertIsNone(
-          pipeline_state1.execution.custom_properties.get(property_key))
-      pipeline_ops.save_pipeline_property(pipeline_state1.mlmd_handle,
-                                          pipeline_state1.pipeline_uid,
-                                          property_key, property_value)
-
-      with pstate.PipelineState.load(
-          m, pipeline_state1.pipeline_uid) as pipeline_state2:
-        self.assertIsNotNone(
-            pipeline_state2.execution.custom_properties.get(property_key))
-        self.assertEqual(
-            pipeline_state2.execution.custom_properties[property_key]
-            .string_value, property_value)
-
-      pipeline_ops.remove_pipeline_property(pipeline_state2.mlmd_handle,
-                                            pipeline_state2.pipeline_uid,
-                                            property_key)
-      with pstate.PipelineState.load(
-          m, pipeline_state2.pipeline_uid) as pipeline_state3:
-        self.assertIsNone(
-            pipeline_state3.execution.custom_properties.get(property_key))
 
   def test_to_status_not_ok_error_decorator(self):
 

@@ -79,7 +79,7 @@ class _FakeErrorExecutorOperator(base_executor_operator.BaseExecutorOperator):
   ) -> execution_result_pb2.ExecutorOutput:
     result = execution_result_pb2.ExecutorOutput()
     result.execution_result.code = 1
-    result.execution_result.result_message = 'execution canceled.'
+    result.execution_result.result_message = 'execution cancled.'
     return result
 
 
@@ -514,7 +514,7 @@ class LauncherTest(test_case_utils.TfxTest):
         custom_executor_operators=executor_operators)
 
     with self.assertRaisesRegex(
-        Exception,
+        RuntimeError,
         'Execution .* failed with error code .* and error message .*'):
       _ = test_launcher.launch()
 
@@ -527,12 +527,6 @@ class LauncherTest(test_case_utils.TfxTest):
           id: 3
           type_id: 8
           last_known_state: FAILED
-          custom_properties {
-            key: '__execution_result__'
-            value {
-              string_value: '{\\n  "resultMessage": "execution canceled.",\\n  "code": 1\\n}'
-            }
-          }
           """,
           executions[-1],
           ignored_fields=[
@@ -638,7 +632,7 @@ class LauncherTest(test_case_utils.TfxTest):
     expected_execution.id = 123
     mock_import_node_handler.run.return_value = expected_execution
     launcher._SYSTEM_NODE_HANDLERS[
-        'tfx.dsl.components.common.importer.Importer'] = (
+        'tfx.dsl.components.common.importer_node.ImporterNode'] = (
             mock_import_node_handler_class)
     test_launcher = launcher.Launcher(
         pipeline_node=self._importer,
@@ -661,7 +655,7 @@ class LauncherTest(test_case_utils.TfxTest):
     expected_execution.id = 123
     mock_resolver_node_handler.run.return_value = expected_execution
     launcher._SYSTEM_NODE_HANDLERS[
-        'tfx.dsl.components.common.resolver.Resolver'] = (
+        'tfx.dsl.components.common.resolver_node.ResolverNode'] = (
             mock_resolver_node_handler_class)
     test_launcher = launcher.Launcher(
         pipeline_node=self._resolver,

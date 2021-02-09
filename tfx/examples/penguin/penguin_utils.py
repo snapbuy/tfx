@@ -35,6 +35,10 @@ _FEATURE_KEYS = [
 ]
 _LABEL_KEY = 'species'
 
+# The Penguin dataset has 342 records, and is divided into train and eval
+# splits in a 2:1 ratio.
+_TRAIN_DATA_SIZE = 228
+_EVAL_DATA_SIZE = 114
 _TRAIN_BATCH_SIZE = 20
 _EVAL_BATCH_SIZE = 10
 
@@ -83,31 +87,7 @@ def _input_fn(file_pattern: List[Text],
       file_pattern,
       dataset_options.TensorFlowDatasetOptions(
           batch_size=batch_size, label_key=_transformed_name(_LABEL_KEY)),
-      tf_transform_output.transformed_metadata.schema).repeat()
-
-
-# TFX Transform will call this function.
-def preprocessing_fn(inputs):
-  """tf.transform's callback function for preprocessing inputs.
-
-  Args:
-    inputs: map from feature keys to raw not-yet-transformed features.
-
-  Returns:
-    Map from string feature key to transformed feature operations.
-  """
-  outputs = {}
-
-  for key in _FEATURE_KEYS:
-    # Nothing to transform for the penguin dataset. This code is just to
-    # show how the preprocessing function for Transform should be defined.
-    # We just assign original values to the transformed feature.
-    outputs[_transformed_name(key)] = inputs[key]
-  # TODO(b/157064428): Support label transformation for Keras.
-  # Do not apply label transformation as it will result in wrong evaluation.
-  outputs[_transformed_name(_LABEL_KEY)] = inputs[_LABEL_KEY]
-
-  return outputs
+      tf_transform_output.transformed_metadata.schema)
 
 
 def _get_hyperparameters() -> kerastuner.HyperParameters:
@@ -149,6 +129,30 @@ def _build_keras_model(hparams: kerastuner.HyperParameters) -> tf.keras.Model:
   return model
 
 
+# TFX Transform will call this function.
+def preprocessing_fn(inputs):
+  """tf.transform's callback function for preprocessing inputs.
+
+  Args:
+    inputs: map from feature keys to raw not-yet-transformed features.
+
+  Returns:
+    Map from string feature key to transformed feature operations.
+  """
+  outputs = {}
+
+  for key in _FEATURE_KEYS:
+    # Nothing to transform for the penguin dataset. This code is just to
+    # show how the preprocessing function for Transform should be defined.
+    # We just assign original values to the transformed feature.
+    outputs[_transformed_name(key)] = inputs[key]
+  # TODO(b/157064428): Support label transformation for Keras.
+  # Do not apply label transformation as it will result in wrong evaluation.
+  outputs[_transformed_name(_LABEL_KEY)] = inputs[_LABEL_KEY]
+
+  return outputs
+
+
 # TFX Tuner will call this function.
 def tuner_fn(fn_args: FnArgs) -> TunerFnResult:
   """Build the tuner using the KerasTuner API.
@@ -180,15 +184,12 @@ def tuner_fn(fn_args: FnArgs) -> TunerFnResult:
       objective=kerastuner.Objective('val_sparse_categorical_accuracy', 'max'),
       directory=fn_args.working_dir,
       project_name='penguin_tuning')
-
   transform_graph = tft.TFTransformOutput(fn_args.transform_graph_path)
-
   train_dataset = _input_fn(
       fn_args.train_files,
       fn_args.data_accessor,
       transform_graph,
       batch_size=_TRAIN_BATCH_SIZE)
-
   eval_dataset = _input_fn(
       fn_args.eval_files,
       fn_args.data_accessor,
@@ -219,7 +220,6 @@ def run_fn(fn_args: FnArgs):
       fn_args.data_accessor,
       tf_transform_output,
       batch_size=_TRAIN_BATCH_SIZE)
-
   eval_dataset = _input_fn(
       fn_args.eval_files,
       fn_args.data_accessor,
@@ -239,13 +239,16 @@ def run_fn(fn_args: FnArgs):
   with mirrored_strategy.scope():
     model = _build_keras_model(hparams)
 
+  steps_per_epoch = _TRAIN_DATA_SIZE // _TRAIN_BATCH_SIZE
+
   # Write logs to path
   tensorboard_callback = tf.keras.callbacks.TensorBoard(
       log_dir=fn_args.model_run_dir, update_freq='batch')
 
   model.fit(
       train_dataset,
-      steps_per_epoch=fn_args.train_steps,
+      epochs=fn_args.train_steps // steps_per_epoch,
+      steps_per_epoch=steps_per_epoch,
       validation_data=eval_dataset,
       validation_steps=fn_args.eval_steps,
       callbacks=[tensorboard_callback])

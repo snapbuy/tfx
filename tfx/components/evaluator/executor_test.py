@@ -1,3 +1,4 @@
+# Lint as: python2, python3
 # Copyright 2019 Google LLC. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,9 +14,11 @@
 # limitations under the License.
 """Tests for tfx.components.evaluator.executor."""
 
-import os
-import unittest
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
 
+import os
 from absl import logging
 from absl.testing import parameterized
 import tensorflow as tf
@@ -41,58 +44,38 @@ from tfx.utils import json_utils
 from tfx.utils import proto_utils
 
 
-@unittest.skipIf(tf.__version__ < '2',
-                 'This test uses testdata only compatible with TF 2.x')
 class ExecutorTest(tf.test.TestCase, parameterized.TestCase):
 
-  @parameterized.named_parameters(
-      ('evaluation_w_eval_config', {
-          EVAL_CONFIG_KEY:
-              proto_utils.proto_to_json(
-                  tfma.EvalConfig(slicing_specs=[
-                      tfma.SlicingSpec(feature_keys=['trip_start_hour']),
-                      tfma.SlicingSpec(
-                          feature_keys=['trip_start_day', 'trip_miles']),
-                  ]))
-      }),
-      ('evaluation_w_module_file', {
-          EVAL_CONFIG_KEY:
-              proto_utils.proto_to_json(
-                  tfma.EvalConfig(slicing_specs=[
-                      tfma.SlicingSpec(feature_keys=['trip_start_hour']),
-                      tfma.SlicingSpec(
-                          feature_keys=['trip_start_day', 'trip_miles']),
-                  ])),
-          MODULE_FILE_KEY:
-              None
-      }),
-      ('evaluation_w_module_path', {
-          EVAL_CONFIG_KEY:
-              proto_utils.proto_to_json(
-                  tfma.EvalConfig(slicing_specs=[
-                      tfma.SlicingSpec(feature_keys=['trip_start_hour']),
-                      tfma.SlicingSpec(
-                          feature_keys=['trip_start_day', 'trip_miles']),
-                  ])),
-          MODULE_PATH_KEY:
-              evaluator_module.__name__,
-      }),
-      ('model_agnostic_evaluation', {
-          EVAL_CONFIG_KEY:
-              proto_utils.proto_to_json(
-                  tfma.EvalConfig(
-                      model_specs=[
-                          tfma.ModelSpec(
-                              label_key='tips', prediction_key='tips'),
-                      ],
-                      slicing_specs=[
-                          tfma.SlicingSpec(feature_keys=['trip_start_hour']),
-                          tfma.SlicingSpec(
-                              feature_keys=['trip_start_day', 'trip_miles']),
-                      ]))
-      }, True),
-  )
-  def testEvalution(self, exec_properties, model_agnostic=False):
+  @parameterized.named_parameters(('evaluation_w_eval_config', {
+      EVAL_CONFIG_KEY:
+          proto_utils.proto_to_json(
+              tfma.EvalConfig(slicing_specs=[
+                  tfma.SlicingSpec(feature_keys=['trip_start_hour']),
+                  tfma.SlicingSpec(
+                      feature_keys=['trip_start_day', 'trip_miles']),
+              ]))
+  }), ('evaluation_w_module_file', {
+      EVAL_CONFIG_KEY:
+          proto_utils.proto_to_json(
+              tfma.EvalConfig(slicing_specs=[
+                  tfma.SlicingSpec(feature_keys=['trip_start_hour']),
+                  tfma.SlicingSpec(
+                      feature_keys=['trip_start_day', 'trip_miles']),
+              ])),
+      MODULE_FILE_KEY:
+          None
+  }), ('evaluation_w_module_path', {
+      EVAL_CONFIG_KEY:
+          proto_utils.proto_to_json(
+              tfma.EvalConfig(slicing_specs=[
+                  tfma.SlicingSpec(feature_keys=['trip_start_hour']),
+                  tfma.SlicingSpec(
+                      feature_keys=['trip_start_day', 'trip_miles']),
+              ])),
+      MODULE_PATH_KEY:
+          evaluator_module.__name__,
+  }))
+  def testEvalution(self, exec_properties):
     source_data_dir = os.path.join(
         os.path.dirname(os.path.dirname(__file__)), 'testdata')
     output_data_dir = os.path.join(
@@ -103,18 +86,17 @@ class ExecutorTest(tf.test.TestCase, parameterized.TestCase):
     examples = standard_artifacts.Examples()
     examples.uri = os.path.join(source_data_dir, 'csv_example_gen')
     examples.split_names = artifact_utils.encode_split_names(['train', 'eval'])
+    model = standard_artifacts.Model()
     baseline_model = standard_artifacts.Model()
+    model.uri = os.path.join(source_data_dir, 'trainer/current')
     baseline_model.uri = os.path.join(source_data_dir, 'trainer/previous/')
     schema = standard_artifacts.Schema()
     schema.uri = os.path.join(source_data_dir, 'schema_gen')
     input_dict = {
         EXAMPLES_KEY: [examples],
+        MODEL_KEY: [model],
         SCHEMA_KEY: [schema],
     }
-    if not model_agnostic:
-      model = standard_artifacts.Model()
-      model.uri = os.path.join(source_data_dir, 'trainer/current')
-      input_dict[MODEL_KEY] = [model]
 
     # Create output dict.
     eval_output = standard_artifacts.ModelEvaluation()
