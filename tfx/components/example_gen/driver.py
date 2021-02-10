@@ -20,7 +20,8 @@ from __future__ import print_function
 
 import copy
 import os
-from typing import Any, Dict, List, Text
+import re
+from typing import Any, Dict, Iterable, List, Optional, Text, Tuple
 
 from absl import logging
 from tfx import types
@@ -65,15 +66,45 @@ def update_output_artifact(
 
 
 class Driver(base_driver.BaseDriver, ir_base_driver.BaseDriver):
-  """Custom driver for ExampleGen.
-
-  This driver supports file based ExampleGen, e.g., for CsvExampleGen and
-  ImportExampleGen.
-  """
+  """Custom driver for ExampleGen."""
 
   def __init__(self, metadata_handler: metadata.Metadata):
     base_driver.BaseDriver.__init__(self, metadata_handler)
     ir_base_driver.BaseDriver.__init__(self, metadata_handler)
+
+  def resolve_span_and_version(
+      self,
+      splits: Iterable[example_gen_pb2.Input.Split],
+      range_config: Optional[range_config_pb2.RangeConfig] = None,
+      input_base_uri: Optional[Text] = None,
+  ) -> Tuple[int, Optional[int], Optional[Text]]:
+    """Resolves Span and Version information.
+
+    If a pattern has the {SPAN} placeholder or the Date spec placeholders,
+    {YYYY}, {MM}, and {DD}, and optionally, the {VERSION} placeholder, attempts
+    to find aligned values that results in all splits having the target span and
+    most recent version for that span.
+
+    Args:
+      splits: An iterable collection of example_gen_pb2.Input.Split objects.
+      range_config: An instance of range_config_pb2.RangeConfig, defines the
+        rules for span resolving.
+      input_base_uri: The base path from which files will be searched, only
+        available for file based ExampleGen.
+
+    Returns:
+      A Tuple of [selected_span, selected_version, fingerprint], where:
+      1. selected_span is either the value matched with the {SPAN} placeholder,
+         the value mapped from matching the calendar date with the date
+         placeholders {YYYY}, {MM}, {DD} or 0 if a placeholder wasn't specified.
+      2. selected_version is either the value matched with the {VERSION}
+         placeholder, or None if the placeholder wasn't specified.
+      3. fingerprint is for files in a URI matching split patterns, or None if
+         fingerprint is unavailable.
+      Note that this function will update the {SPAN} or Date tags as well as the
+      {VERSION} tags in the split configs to actual Span and Version numbers.
+    """
+    raise NotImplementedError
 
   def resolve_exec_properties(
       self,
@@ -88,7 +119,7 @@ class Driver(base_driver.BaseDriver, ir_base_driver.BaseDriver):
     proto_utils.json_to_proto(exec_properties[utils.INPUT_CONFIG_KEY],
                               input_config)
 
-    input_base = exec_properties[utils.INPUT_BASE_KEY]
+    input_base = exec_properties.get(utils.INPUT_BASE_KEY, None)
     logging.debug('Processing input %s.', input_base)
 
     range_config = None
@@ -108,8 +139,8 @@ class Driver(base_driver.BaseDriver, ir_base_driver.BaseDriver):
               'be equal: (%s, %s)' % (start_span_number, end_span_number))
 
     # Note that this function updates the input_config.splits.pattern.
-    fingerprint, span, version = utils.calculate_splits_fingerprint_span_and_version(
-        input_base, input_config.splits, range_config)
+    span, version, fingerprint = self.resolve_span_and_version(
+        input_config.splits, range_config, input_base)
 
     exec_properties[utils.INPUT_CONFIG_KEY] = proto_utils.proto_to_json(
         input_config)
@@ -164,3 +195,62 @@ class Driver(base_driver.BaseDriver, ir_base_driver.BaseDriver):
     update_output_artifact(exec_properties, output_example)
     result.output_artifacts[utils.EXAMPLES_KEY].artifacts.append(output_example)
     return result
+
+
+class FileBasedDriver(Driver):
+  """Custom Driver for file based ExampleGen, e.g., ImportExampleGen."""
+
+  def resolve_span_and_version(
+      self,
+      splits: Iterable[example_gen_pb2.Input.Split],
+      range_config: Optional[range_config_pb2.RangeConfig] = None,
+      input_base_uri: Optional[Text] = None,
+  ) -> Tuple[int, Optional[int], Optional[Text]]:
+    """Resolves Span and Version information for file based ExampleGen."""
+    assert input_base_uri
+    fingerprint, span, version = utils.calculate_splits_fingerprint_span_and_version(
+        input_base_uri, splits, range_config)
+    assert fingerprint
+    return span, version, fingerprint
+
+
+class QueryBasedDriver(Driver):
+  """Custom Driver for query based ExampleGen, e.g., BigQueryExampleGen."""
+
+  def resolve_span_and_version(
+      self,
+      splits: Iterable[example_gen_pb2.Input.Split],
+      range_config: Optional[range_config_pb2.RangeConfig] = None,
+      input_base_uri: Optional[Text] = None,
+  ) -> Tuple[int, Optional[int], Optional[Text]]:
+    """Resolves Span and Version information for query based ExampleGen."""
+    # TODO(b/179853017): support fingerprint of table.
+    # TODO(b/179853017): support latest span based on timestamp.
+    # TODO(b/179853017): support Date and Version spec.
+
+    assert input_base_uri is None
+
+    selected_span = 0
+
+    for split in splits:
+      is_match_span, is_match_date, is_match_version = utils.verify_split_pattern_specs(
+          split)
+      if is_match_date or is_match_version:
+        raise ValueError(
+            'Date and Version spec is not supported for query based ExampleGen.'
+        )
+
+      if is_match_span and not range_config:
+        raise ValueError('Range config is missing.')
+      if not is_match_span and range_config:
+        raise ValueError('Span spec should be specified in query.')
+
+      if is_match_span and range_config:
+        if range_config.HasField('static_range'):
+          selected_span = range_config.static_range.start_span_number
+          split.pattern = re.sub(utils.SPAN_FULL_REGEX, str(selected_span),
+                                 split.pattern)
+        else:
+          raise ValueError('Only static_range in RangeConfig is supported.')
+
+    return selected_span, None, None

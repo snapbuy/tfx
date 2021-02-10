@@ -47,7 +47,7 @@ class DriverTest(tf.test.TestCase):
 
     # Mock metadata and create driver.
     self._mock_metadata = tf.compat.v1.test.mock.Mock()
-    self._example_gen_driver = driver.Driver(self._mock_metadata)
+    self._file_based_driver = driver.FileBasedDriver(self._mock_metadata)
 
   def testResolveExecProperties(self):
     # Create input dir.
@@ -86,8 +86,8 @@ class DriverTest(tf.test.TestCase):
     # Check that error raised when span does not match.
     with self.assertRaisesRegexp(
         ValueError, 'Latest span should be the same for each split'):
-      self._example_gen_driver.resolve_exec_properties(self._exec_properties,
-                                                       None, None)
+      self._file_based_driver.resolve_exec_properties(self._exec_properties,
+                                                      None, None)
 
     span2_v1_split2 = os.path.join(self._input_base_path, 'span02', 'version01',
                                    'split2', 'data')
@@ -99,8 +99,8 @@ class DriverTest(tf.test.TestCase):
     # Check that error raised when span matches, but version does not match.
     with self.assertRaisesRegexp(
         ValueError, 'Latest version should be the same for each split'):
-      self._example_gen_driver.resolve_exec_properties(self._exec_properties,
-                                                       None, None)
+      self._file_based_driver.resolve_exec_properties(self._exec_properties,
+                                                      None, None)
 
     span2_v2_split2 = os.path.join(self._input_base_path, 'span02', 'version02',
                                    'split2', 'data')
@@ -108,8 +108,8 @@ class DriverTest(tf.test.TestCase):
 
     # Test if latest span and version selected when span and version aligns
     # for each split.
-    self._example_gen_driver.resolve_exec_properties(self._exec_properties,
-                                                     None, None)
+    self._file_based_driver.resolve_exec_properties(self._exec_properties, None,
+                                                    None)
     self.assertEqual(self._exec_properties[utils.SPAN_PROPERTY_NAME], 2)
     self.assertEqual(self._exec_properties[utils.VERSION_PROPERTY_NAME], 2)
     self.assertRegex(
@@ -147,15 +147,15 @@ class DriverTest(tf.test.TestCase):
                 start_span_number=1, end_span_number=2)))
     with self.assertRaisesRegexp(
         ValueError, 'Start and end span numbers for RangeConfig.static_range'):
-      self._example_gen_driver.resolve_exec_properties(self._exec_properties,
-                                                       None, None)
+      self._file_based_driver.resolve_exec_properties(self._exec_properties,
+                                                      None, None)
 
     self._exec_properties[utils.RANGE_CONFIG_KEY] = proto_utils.proto_to_json(
         range_config_pb2.RangeConfig(
             static_range=range_config_pb2.StaticRange(
                 start_span_number=1, end_span_number=1)))
-    self._example_gen_driver.resolve_exec_properties(self._exec_properties,
-                                                     None, None)
+    self._file_based_driver.resolve_exec_properties(self._exec_properties, None,
+                                                    None)
     self.assertEqual(self._exec_properties[utils.SPAN_PROPERTY_NAME], 1)
     self.assertEqual(self._exec_properties[utils.VERSION_PROPERTY_NAME], 1)
     self.assertRegex(
@@ -192,7 +192,7 @@ class DriverTest(tf.test.TestCase):
         component_type='type', component_id='cid', pipeline_info=pipeline_info)
 
     input_artifacts = {}
-    output_artifacts = self._example_gen_driver._prepare_output_artifacts(  # pylint: disable=protected-access
+    output_artifacts = self._file_based_driver._prepare_output_artifacts(  # pylint: disable=protected-access
         input_artifacts, output_dict, exec_properties, 1, pipeline_info,
         component_info)
     examples = artifact_utils.get_single_instance(
@@ -223,7 +223,7 @@ class DriverTest(tf.test.TestCase):
                                    'data')
     io_utils.write_string_file(span1_v1_split2, 'testing12')
 
-    ir_driver = driver.Driver(self._mock_metadata)
+    ir_driver = driver.FileBasedDriver(self._mock_metadata)
     example = standard_artifacts.Examples()
 
     # Prepare output_dic
@@ -279,6 +279,64 @@ class DriverTest(tf.test.TestCase):
             utils.FINGERPRINT_PROPERTY_NAME].string_value,
         r'split:s1,num_files:1,total_bytes:9,xor_checksum:.*,sum_checksum:.*\nsplit:s2,num_files:1,total_bytes:9,xor_checksum:.*,sum_checksum:.*'
     )
+
+  def testQueryBasedDriver(self):
+    input_config = example_gen_pb2.Input(splits=[
+        example_gen_pb2.Input.Split(name='s', pattern='select * from table'),
+    ])
+    input_config_span = example_gen_pb2.Input(splits=[
+        example_gen_pb2.Input.Split(
+            name='s1',
+            pattern="select * from table where span={SPAN} and split='s1'"),
+        example_gen_pb2.Input.Split(
+            name='s2',
+            pattern="select * from table where span={SPAN} and split='s2'")
+    ])
+    input_config_date = example_gen_pb2.Input(splits=[
+        example_gen_pb2.Input.Split(
+            name='s', pattern='select * from table where date={YYYY}{MM}{DD}')
+    ])
+    range_config = range_config_pb2.RangeConfig(
+        static_range=range_config_pb2.StaticRange(
+            start_span_number=2, end_span_number=2))
+
+    query_based_driver = driver.QueryBasedDriver(self._mock_metadata)
+
+    with self.assertRaisesRegexp(ValueError,
+                                 'Span spec should be specified in query'):
+      query_based_driver.resolve_span_and_version(input_config.splits,
+                                                  range_config)
+
+    with self.assertRaisesRegexp(ValueError, 'Range config is missing'):
+      query_based_driver.resolve_span_and_version(input_config_span.splits)
+
+    with self.assertRaisesRegexp(
+        ValueError,
+        'Date and Version spec is not supported for query based ExampleGen'):
+      query_based_driver.resolve_span_and_version(input_config_date.splits)
+
+    with self.assertRaisesRegexp(
+        ValueError, 'Only static_range in RangeConfig is supported'):
+      query_based_driver.resolve_span_and_version(
+          input_config_span.splits, range_config_pb2.RangeConfig())
+
+    span, version, fp = query_based_driver.resolve_span_and_version(
+        input_config.splits)
+    self.assertEqual((span, version, fp), (0, None, None))
+
+    span, version, fp = query_based_driver.resolve_span_and_version(
+        input_config_span.splits, range_config)
+    self.assertEqual((span, version, fp), (2, None, None))
+    self.assertProtoEquals(
+        """
+        splits {
+          name: "s1"
+          pattern: "select * from table where span=2 and split='s1'"
+        }
+        splits {
+          name: "s2"
+          pattern: "select * from table where span=2 and split='s2'"
+        }""", input_config_span)
 
 
 if __name__ == '__main__':

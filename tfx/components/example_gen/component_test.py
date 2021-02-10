@@ -22,7 +22,6 @@ import tensorflow as tf
 from tfx.components.example_gen import base_example_gen_executor
 from tfx.components.example_gen import component
 from tfx.components.example_gen import driver
-from tfx.dsl.components.base import base_driver
 from tfx.dsl.components.base import executor_spec
 from tfx.proto import example_gen_pb2
 from tfx.proto import range_config_pb2
@@ -82,7 +81,7 @@ class ComponentTest(tf.test.TestCase):
             example_gen_pb2.Input.Split(name='single', pattern='query'),
         ]))
     self.assertEqual({}, example_gen.inputs.get_all())
-    self.assertEqual(base_driver.BaseDriver, example_gen.driver_class)
+    self.assertEqual(driver.QueryBasedDriver, example_gen.driver_class)
     self.assertEqual(standard_artifacts.Examples.TYPE_NAME,
                      example_gen.outputs['examples'].type_name)
     self.assertEqual(example_gen.exec_properties['output_data_format'],
@@ -102,7 +101,7 @@ class ComponentTest(tf.test.TestCase):
   def testConstructSubclassFileBased(self):
     example_gen = TestFileBasedExampleGenComponent(input_base='path')
     self.assertIn('input_base', example_gen.exec_properties)
-    self.assertEqual(driver.Driver, example_gen.driver_class)
+    self.assertEqual(driver.FileBasedDriver, example_gen.driver_class)
     self.assertEqual(standard_artifacts.Examples.TYPE_NAME,
                      example_gen.outputs['examples'].type_name)
     self.assertIsNone(example_gen.exec_properties.get('custom_config'))
@@ -112,7 +111,7 @@ class ComponentTest(tf.test.TestCase):
         input_base='path',
         custom_executor_spec=executor_spec.ExecutorClassSpec(
             TestExampleGenExecutor))
-    self.assertEqual(driver.Driver, example_gen.driver_class)
+    self.assertEqual(driver.FileBasedDriver, example_gen.driver_class)
     self.assertEqual(standard_artifacts.Examples.TYPE_NAME,
                      example_gen.outputs['examples'].type_name)
 

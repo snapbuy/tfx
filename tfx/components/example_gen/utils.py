@@ -248,7 +248,7 @@ def span_number_to_date(span: int) -> Tuple[int, int, int]:
   return date.year, date.month, date.day
 
 
-def _verify_split_pattern_specs(
+def verify_split_pattern_specs(
     split: example_gen_pb2.Input.Split) -> Tuple[bool, bool, bool]:
   """Verify and identify specs to be matched in split pattern."""
   # Match occurences of pattern '{SPAN}|{SPAN:*}'. If it exists, capture
@@ -533,7 +533,7 @@ def _get_target_span_version(
       - If Span or Version found is not an integer.
       - If a matching cannot be found for split pattern provided.
   """
-  is_match_span, is_match_date, is_match_version = _verify_split_pattern_specs(
+  is_match_span, is_match_date, is_match_version = verify_split_pattern_specs(
       split)
 
   if not is_match_span and not is_match_date:
