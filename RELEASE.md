@@ -9,7 +9,6 @@
 ### For component authors
 
 ## Deprecations
-*   Deprecated input/output compatibility aliases for Transform.
 
 ## Bug fixes and other changes
 
