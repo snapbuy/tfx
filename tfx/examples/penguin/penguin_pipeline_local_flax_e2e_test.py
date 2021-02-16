@@ -14,7 +14,6 @@
 """E2E Tests for tfx.examples.penguin.penguin_pipeline_local."""
 
 import os
-from typing import Text
 import unittest
 
 from absl import logging
@@ -22,52 +21,26 @@ import tensorflow as tf
 
 from tfx.dsl.io import fileio
 from tfx.examples.penguin import penguin_pipeline_local
+from tfx.examples.penguin import penguin_pipeline_local_e2e_test
 from tfx.orchestration import metadata
 from tfx.orchestration.local.local_dag_runner import LocalDagRunner
 
 
 @unittest.skipIf(tf.__version__ < '2',
                  'Uses keras Model only compatible with TF 2.x')
-class PenguinPipelineLocalEndToEndTest(tf.test.TestCase):
+class PenguinPipelineLocalFlaxEndToEndTest(
+    penguin_pipeline_local_e2e_test.PenguinPipelineLocalEndToEndTest):
 
   def setUp(self):
-    super(PenguinPipelineLocalEndToEndTest, self).setUp()
+    super(PenguinPipelineLocalFlaxEndToEndTest, self).setUp()
 
-    self._test_dir = os.path.join(
-        os.environ.get('TEST_UNDECLARED_OUTPUTS_DIR', self.get_temp_dir()),
-        self._testMethodName)
-
-    self._pipeline_name = 'penguin_test'
-    self._data_root = os.path.join(os.path.dirname(__file__), 'data')
+    try:
+      import flax  # pylint: disable=g-import-not-at-top
+    except ImportError:
+      raise unittest.SkipTest('flax is not installed. Skipping test.')
 
     self._module_file = os.path.join(
-        os.path.dirname(__file__), 'penguin_utils_keras.py')
-    self._serving_model_dir = os.path.join(self._test_dir, 'serving_model')
-    self._pipeline_root = os.path.join(self._test_dir, 'tfx', 'pipelines',
-                                       self._pipeline_name)
-    self._metadata_path = os.path.join(self._test_dir, 'tfx', 'metadata',
-                                       self._pipeline_name, 'metadata.db')
-
-  def assertExecutedOnce(self, component: Text) -> None:
-    """Check the component is executed exactly once."""
-    component_path = os.path.join(self._pipeline_root, component)
-    self.assertTrue(fileio.exists(component_path))
-    outputs = fileio.listdir(component_path)
-    for output in outputs:
-      execution = fileio.listdir(os.path.join(component_path, output))
-      self.assertLen(execution, 1)
-
-  def assertPipelineExecution(self, has_tuner: bool) -> None:
-    self.assertExecutedOnce('CsvExampleGen')
-    self.assertExecutedOnce('Evaluator')
-    self.assertExecutedOnce('ExampleValidator')
-    self.assertExecutedOnce('Pusher')
-    self.assertExecutedOnce('SchemaGen')
-    self.assertExecutedOnce('StatisticsGen')
-    self.assertExecutedOnce('Trainer')
-    self.assertExecutedOnce('Transform')
-    if has_tuner:
-      self.assertExecutedOnce('Tuner')
+        os.path.dirname(__file__), 'penguin_utils_flax.py')
 
   def testPenguinPipelineLocal(self):
     pipeline = penguin_pipeline_local._create_pipeline(
@@ -115,31 +88,6 @@ class PenguinPipelineLocalEndToEndTest(tf.test.TestCase):
       # Artifact count is unchanged.
       self.assertLen(m.store.get_artifacts(), artifact_count)
       self.assertLen(m.store.get_executions(), expected_execution_count * 3)
-
-  def testPenguinPipelineLocalWithTuner(self):
-    LocalDagRunner().run(
-        penguin_pipeline_local._create_pipeline(
-            pipeline_name=self._pipeline_name,
-            data_root=self._data_root,
-            module_file=self._module_file,
-            serving_model_dir=self._serving_model_dir,
-            pipeline_root=self._pipeline_root,
-            metadata_path=self._metadata_path,
-            enable_tuning=True,
-            beam_pipeline_args=[]))
-
-    self.assertTrue(fileio.exists(self._serving_model_dir))
-    self.assertTrue(fileio.exists(self._metadata_path))
-    expected_execution_count = 10  # 9 components + 1 resolver
-    metadata_config = metadata.sqlite_metadata_connection_config(
-        self._metadata_path)
-    with metadata.Metadata(metadata_config) as m:
-      artifact_count = len(m.store.get_artifacts())
-      execution_count = len(m.store.get_executions())
-      self.assertGreaterEqual(artifact_count, execution_count)
-      self.assertEqual(expected_execution_count, execution_count)
-
-    self.assertPipelineExecution(True)
 
 
 if __name__ == '__main__':

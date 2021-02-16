@@ -10,6 +10,9 @@
    [tensorflow_ranking](https://github.com/tensorflow/ranking))
    at `tfx/examples/ranking`. More documentation will be available in future
    releases.
+*  Expanded the penguin example pipeline with instructions for using
+   [JAX/Flax](https://github.com/google/flax) in addition to
+   TensorFlow/Keras to write and train the model.
 
 ## Breaking changes
 

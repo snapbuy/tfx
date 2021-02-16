@@ -39,7 +39,7 @@ class PenguinPipelineLocalInfravalEndToEndTest(tf.test.TestCase):
     self._pipeline_name = 'penguin_test'
     self._data_root = os.path.join(os.path.dirname(__file__), 'data')
     self._module_file = os.path.join(
-        os.path.dirname(__file__), 'penguin_utils.py')
+        os.path.dirname(__file__), 'penguin_utils_keras.py')
     self._serving_model_dir = os.path.join(self._test_dir, 'serving_model')
     self._pipeline_root = os.path.join(self._test_dir, 'tfx', 'pipelines',
                                        self._pipeline_name)

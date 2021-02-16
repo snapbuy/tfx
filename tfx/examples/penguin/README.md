@@ -46,3 +46,23 @@ Execute the pipeline python file and output can be found at `~/tfx`:
 <pre class="devsite-terminal devsite-click-to-copy">
 python ~/penguin/penguin_pipeline_local.py
 </pre>
+
+## Instructions for using Flax
+
+The above instructions will use Keras for model definition and training.
+Alternatively, you can use essentially the same TFX configuration with
+[Flax](https://github.com/google/flax) models. The bulk of the differences
+from using a Keras model are in `penguin_utils_flax.py`.
+
+To run the local pipeline with Flax, you must install JAX and Flax:
+
+<pre class="devsite-terminal devsite-click-to-copy">
+pip install jax jaxlib flax
+</pre>
+
+Then run:
+<pre class="devsite-terminal devsite-click-to-copy">
+python ~/penguin/penguin_pipeline_local.py --model_framework=flax
+</pre>
+
+
