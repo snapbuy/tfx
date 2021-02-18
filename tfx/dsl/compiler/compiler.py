@@ -14,7 +14,8 @@
 """Compiles a TFX pipeline into a TFX DSL IR proto."""
 import json
 import re
-from typing import cast, Iterable, List, Mapping
+
+from typing import cast, List, Mapping, Iterable
 
 from tfx import types
 from tfx.dsl.compiler import compiler_utils

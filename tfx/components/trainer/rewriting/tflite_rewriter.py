@@ -21,9 +21,7 @@ from __future__ import print_function
 import os
 import time
 
-from typing import Iterable, Optional, Sequence, Text
-
-import numpy as np
+from typing import Optional, Sequence, Text
 
 import six
 import tensorflow as tf
@@ -58,7 +56,6 @@ class TFLiteRewriter(rewriter.BaseRewriter):
       quantization_supported_types: Optional[Sequence[tf.DType]] = None,
       quantization_enable_full_integer: bool = False,
       signature_key: Text = None,
-      representative_dataset: Optional[Iterable[Sequence[np.ndarray]]] = None,
       **kwargs):
     """Create an instance of the TFLiteRewriter.
 
@@ -77,16 +74,13 @@ class TFLiteRewriter(rewriter.BaseRewriter):
         Check
         https://www.tensorflow.org/lite/performance/post_training_quantization
         for details.
-      quantization_enable_full_integer: True to quantize with FULL_INTEGER
+      quantization_enable_full_integer: True to quantizae with FULL_INTEGER
         option.
       signature_key: Key identifying SignatureDef containing TFLite inputs and
         outputs.
-      representative_dataset: Iterable that provides representative examples
-        used for quantization. See
-        https://www.tensorflow.org/lite/performance/post_training_quantization
-          for details.
       **kwargs: Additional keyword arguments to create TFlite converter.
     """
+    # TODO(b/152636072): Add support for representative_dataset.
     self._name = name
     self._filename = six.ensure_text(filename)
     self._copy_assets = copy_assets
@@ -98,12 +92,13 @@ class TFLiteRewriter(rewriter.BaseRewriter):
       quantization_supported_types = []
     self._quantization_optimizations = quantization_optimizations
     self._quantization_supported_types = quantization_supported_types
-    self._representative_dataset = representative_dataset
-    if (quantization_enable_full_integer and
-        self._representative_dataset is None):
-      raise ValueError('If quantization_enable_full_integer is set to '
-                       '`True`, then `representative_dataset` must be '
-                       'defined.')
+    self._input_data = None
+    if quantization_enable_full_integer:
+      # TODO(b/175699054): Enable once data API is landed.
+      # This is to trigger FULL_INTEGER path inside _create_tflite_converter
+      # for testing purpose. As a consequence the code will throw
+      # NotImplementedError inside _create_tflite_converter.
+      self._input_data = 1
     self._signature_key = signature_key
     self._kwargs = kwargs
 
@@ -161,7 +156,8 @@ class TFLiteRewriter(rewriter.BaseRewriter):
         saved_model_path=tmp_model_dir,
         quantization_optimizations=self._quantization_optimizations,
         quantization_supported_types=self._quantization_supported_types,
-        representative_dataset=self._representative_dataset,
+        # TODO(b/175699054): Enable once data API is landed.
+        input_data=self._input_data,
         signature_key=self._signature_key,
         **self._kwargs)
     tflite_model = converter.convert()
@@ -206,14 +202,15 @@ class TFLiteRewriter(rewriter.BaseRewriter):
     # TODO(dzats): Implement post-rewrite validation.
     pass
 
-  def _create_tflite_converter(self,
-                               saved_model_path: Text,
-                               quantization_optimizations: Sequence[
-                                   tf.lite.Optimize],
-                               quantization_supported_types: Sequence[tf.DType],
-                               representative_dataset=None,
-                               signature_key: Text = None,
-                               **kwargs) -> tf.lite.TFLiteConverter:
+  def _create_tflite_converter(
+      self,
+      saved_model_path: Text,
+      quantization_optimizations: Sequence[tf.lite.Optimize],
+      quantization_supported_types: Sequence[tf.DType],
+      # TODO(b/175699054): Enable once data API is adopted.
+      input_data=None,
+      signature_key: Text = None,
+      **kwargs) -> tf.lite.TFLiteConverter:
     """Creates a TFLite converter with proper quantization options.
 
     Currently,
@@ -229,10 +226,8 @@ class TFLiteRewriter(rewriter.BaseRewriter):
         Check
         https://www.tensorflow.org/lite/performance/post_training_quantization
           for details.
-      representative_dataset: Iterable that provides representative examples
-        used for quantization. See
-        https://www.tensorflow.org/lite/performance/post_training_quantization
-          for details.
+      input_data: Data for full-integer quantization to be used as a
+        representative dataset. None if quantization is not full-integer.
       signature_key: Key identifying SignatureDef containing TFLite inputs and
         outputs. (default tf.saved_model.DEFAULT_SERVING_SIGNATURE_DEF_KEY)
       **kwargs: Additional arguments to create tflite converter.
@@ -254,6 +249,16 @@ class TFLiteRewriter(rewriter.BaseRewriter):
 
     converter.optimizations = quantization_optimizations
     converter.target_spec.supported_types = quantization_supported_types
-    converter.representative_dataset = representative_dataset
+
+    if input_data:
+
+      def _representative_dataset():
+        # TODO(b/175699054): Fill the logic once input_data is landed.
+        pass
+
+      converter.representative_dataset = _representative_dataset
+      # TODO(b/175699054): Remove once data API is adopted.
+      raise NotImplementedError(
+          'Full-integer quantization is not supported yet.')
 
     return converter
